@@ -66,6 +66,9 @@ button:disabled {
   opacity: 0.5;
   background-color: #208ef0;
 }
+p {
+  color: red;
+}
 
 #root {
   max-width: 1280px;

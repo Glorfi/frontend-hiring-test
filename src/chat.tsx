@@ -1,16 +1,9 @@
-import React, {
-  ChangeEvent,
-  FormEvent,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { ChangeEvent, FormEvent, useState } from 'react';
 import { ItemContent, Virtuoso } from 'react-virtuoso';
 import cn from 'clsx';
 import {
   MessageSender,
   QueryMessagesArgs,
-  // MessageStatus,
   type Message,
 } from '../__generated__/resolvers-types';
 import css from './chat.module.css';
@@ -21,14 +14,7 @@ import {
   SendMessageVars,
 } from './graphql/sendMessageMutation';
 import { GET_MESSAGES, MessagesResponse } from './graphql/getMessagesQuery';
-
-// const temp_data: Message[] = Array.from(Array(30), (_, index) => ({
-//   id: String(index),
-//   text: `Message number ${index}`,
-//   status: MessageStatus.Read,
-//   updatedAt: new Date().toISOString(),
-//   sender: index % 2 ? MessageSender.Admin : MessageSender.Customer,
-// }));
+import { ADD_MESSAGE_SUBSCRIPTION } from './graphql/messageAddedSubscirption';
 
 const Item: React.FC<Message> = ({ text, sender }) => {
   return (
@@ -50,22 +36,27 @@ const getItem: ItemContent<Message, unknown> = (_, data) => {
 };
 
 export const Chat: React.FC = () => {
+  const [messageList, setMessageList] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string>('');
   const PAGE_SIZE = 10;
-  const {
-    data: messageQueryData,
-    loading: messageQueryLoading,
-    fetchMore,
-  } = useQuery<MessagesResponse, QueryMessagesArgs>(GET_MESSAGES, {
+
+  const { data: messageQueryData, fetchMore } = useQuery<
+    MessagesResponse,
+    QueryMessagesArgs
+  >(GET_MESSAGES, {
     variables: { first: PAGE_SIZE },
     notifyOnNetworkStatusChange: true,
+    onCompleted: (data) => {
+      setMessageList(data.messages.edges.map((edge) => edge.node));
+    },
+    onError: (error) => {
+      setErrorMessage(error.message);
+    },
   });
-//  const {} = useSubscription()
-
-  const messageList: Message[] =
-    messageQueryData?.messages.edges.map((edge) => edge.node) ?? [];
-  const pageInfo = messageQueryData?.messages.pageInfo;
 
   function onReachedListEnd() {
+    const pageInfo = messageQueryData?.messages.pageInfo;
     if (pageInfo?.hasNextPage && pageInfo.endCursor) {
       fetchMore({
         variables: { first: PAGE_SIZE, after: pageInfo.endCursor },
@@ -86,31 +77,37 @@ export const Chat: React.FC = () => {
     }
   }
 
-  const [message, setMessage] = useState<string>('');
-
-  const [
-    sendMessage,
-    {
-      data: sendMessageResult,
-      loading: sendMessageLoading,
-      error: sendMessageError,
-    },
-  ] = useMutation<SendMessageResult, SendMessageVars>(SEND_MESSAGE);
+  const [sendMessage, { loading: sendMessageLoading }] = useMutation<
+    SendMessageResult,
+    SendMessageVars
+  >(SEND_MESSAGE);
 
   function handleMessageInput(e: ChangeEvent<HTMLInputElement>) {
-    setMessage(e.target.value);
+    setNewMessage(e.target.value);
   }
 
   async function handleSendMessageButton(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     try {
-      await sendMessage({ variables: { text: message } });
+      await sendMessage({ variables: { text: newMessage } });
       console.log('Message sent');
-      setMessage('');
+      setNewMessage('');
     } catch (error) {
       console.error('❌ Eror', error);
+      setErrorMessage('Smth went wrong, check the logs to find out');
     }
   }
+
+  useSubscription(ADD_MESSAGE_SUBSCRIPTION, {
+    onData: ({ data: subscriptionData }) => {
+      if (!subscriptionData.data) return;
+      const newMessage = subscriptionData.data.messageAdded;
+      setMessageList((prev) => [...prev, newMessage]);
+    },
+    onError: (error) => {
+      setErrorMessage(error.message);
+    },
+  });
 
   return (
     <div className={css.root}>
@@ -120,6 +117,7 @@ export const Chat: React.FC = () => {
           data={messageList}
           itemContent={getItem}
           endReached={onReachedListEnd}
+          followOutput="smooth"
         />
       </div>
       <form className={css.footer} onSubmit={handleSendMessageButton}>
@@ -127,13 +125,14 @@ export const Chat: React.FC = () => {
           type="text"
           className={css.textInput}
           placeholder="Message text"
-          value={message}
+          value={newMessage}
           onChange={handleMessageInput}
         />
-        <button type="submit" disabled={!message || sendMessageLoading}>
+        <button type="submit" disabled={!newMessage || sendMessageLoading}>
           {!sendMessageLoading ? 'Send' : 'Sending...'}
         </button>
       </form>
+      {errorMessage && <p className={css.p}>{errorMessage}</p>}
     </div>
   );
 };
