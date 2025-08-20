@@ -9,13 +9,14 @@ export const GET_MESSAGES = gql`
   query Messages($first: Int, $after: MessagesCursor, $before: MessagesCursor) {
     messages(first: $first, after: $after, before: $before) {
       edges {
-        cursor
         node {
           id
           text
-          sender
+          status
           updatedAt
+          sender
         }
+        cursor
       }
       pageInfo {
         hasNextPage
